@@ -485,6 +485,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         return;
       }
 
+<<<<<<< HEAD
       // Creates native image decoder only if a JPEG image or mask is present.
       var nativeImageDecoder = null;
       if (nativeImageDecoderSupport === NativeImageDecoding.DECODE &&
@@ -503,6 +504,18 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         warn('Unable to decode image: ' + reason);
         this.handler.send('obj', [objId, this.pageIndex, 'Image', null]);
       });
+=======
+      PDFImage.buildImage(self.handler, self.xref, resources, image, inline).
+        then(function(imageObj) {
+          imageObj.print = operatorList.intent === 'print' ? true : false;
+          var imgData = imageObj.createImageData(/* forceRGBA = */ false);
+          self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData],
+            [imgData.data.buffer]);
+        }).then(undefined, function (reason) {
+          warn('Unable to decode image: ' + reason);
+          self.handler.send('obj', [objId, self.pageIndex, 'Image', null]);
+        });
+>>>>>>> 07ba1adcd06bc27dae77f931f3a8ef484752802e
 
       operatorList.addOp(OPS.paintImageXObject, args);
       if (cacheKey) {
