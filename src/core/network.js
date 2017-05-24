@@ -68,6 +68,9 @@ if (typeof PDFJSDev !== 'undefined' && PDFJSDev.test('FIREFOX || MOZCENTRAL')) {
   var supportsMozChunked =
     typeof PDFJSDev !== 'undefined' && PDFJSDev.test('CHROME') ? false :
       (function supportsMozChunkedClosure() {
+      if (typeof navigator !== 'undefined' && /Chrome/.test(navigator.userAgent)) {
+        return false;
+      }
     try {
       var x = new XMLHttpRequest();
       // Firefox 37- required .open() to be called before setting responseType.
