@@ -17,8 +17,8 @@
 import { DefaultExternalServices, PDFViewerApplication } from './app';
 import { BasePreferences } from './preferences';
 import { DownloadManager } from './download_manager';
-import { OverlayManager } from './overlay_manager';
-import { PDFJS } from './pdfjs';
+import { GenericL10n } from './genericl10n';
+import { PDFJS } from 'pdfjs-lib';
 
 if (typeof PDFJSDev === 'undefined' || !PDFJSDev.test('CHROME')) {
   throw new Error('Module "pdfjs-web/chromecom" shall not be used outside ' +
@@ -56,10 +56,11 @@ ChromeCom.request = function ChromeCom_request(action, data, callback) {
 /**
  * Resolves a PDF file path and attempts to detects length.
  *
- * @param {String} file Absolute URL of PDF file.
- * @param {Function} callback A callback with resolved URL and file length.
+ * @param {String} file - Absolute URL of PDF file.
+ * @param {OverlayManager} overlayManager - Manager for the viewer overlays.
+ * @param {Function} callback - A callback with resolved URL and file length.
  */
-ChromeCom.resolvePDFFile = function ChromeCom_resolvePDFFile(file, callback) {
+ChromeCom.resolvePDFFile = function(file, overlayManager, callback) {
   // Expand drive:-URLs to filesystem URLs (Chrome OS)
   file = file.replace(/^drive:/i,
       'filesystem:' + location.origin + '/external/');
@@ -110,7 +111,7 @@ ChromeCom.resolvePDFFile = function ChromeCom_resolvePDFFile(file, callback) {
         if (isAllowedAccess) {
           callback(file);
         } else {
-          requestAccessToLocalFile(file);
+          requestAccessToLocalFile(file, overlayManager);
         }
       });
     });
@@ -155,7 +156,7 @@ function reloadIfRuntimeIsUnavailable() {
 }
 
 var chromeFileAccessOverlayPromise;
-function requestAccessToLocalFile(fileUrl) {
+function requestAccessToLocalFile(fileUrl, overlayManager) {
   var onCloseOverlay = null;
   if (top !== window) {
     // When the extension reloads after receiving new permissions, the pages
@@ -169,11 +170,11 @@ function requestAccessToLocalFile(fileUrl) {
     onCloseOverlay = function() {
       window.removeEventListener('focus', reloadIfRuntimeIsUnavailable);
       reloadIfRuntimeIsUnavailable();
-      OverlayManager.close('chromeFileAccessOverlay');
+      overlayManager.close('chromeFileAccessOverlay');
     };
   }
   if (!chromeFileAccessOverlayPromise) {
-    chromeFileAccessOverlayPromise = OverlayManager.register(
+    chromeFileAccessOverlayPromise = overlayManager.register(
       'chromeFileAccessOverlay',
       document.getElementById('chromeFileAccessOverlay'),
       onCloseOverlay, true);
@@ -207,7 +208,7 @@ function requestAccessToLocalFile(fileUrl) {
       // checkbox causes the extension to reload, and Chrome will close all
       // tabs upon reload.
       ChromeCom.request('openExtensionsPageForFileAccess', {
-        newTab: e.ctrlKey || e.metaKey || e.button === 1 || window !== top
+        newTab: e.ctrlKey || e.metaKey || e.button === 1 || window !== top,
       });
     };
 
@@ -215,7 +216,7 @@ function requestAccessToLocalFile(fileUrl) {
     // why this permission request is shown.
     document.getElementById('chrome-url-of-local-file').textContent = fileUrl;
 
-    OverlayManager.open('chromeFileAccessOverlay');
+    overlayManager.open('chromeFileAccessOverlay');
   });
 }
 
@@ -253,14 +254,14 @@ function setReferer(url, callback) {
   if (!port) {
     // The background page will accept the port, and keep adding the Referer
     // request header to requests to |url| until the port is disconnected.
-    port = chrome.runtime.connect({name: 'chromecom-referrer'});
+    port = chrome.runtime.connect({ name: 'chromecom-referrer', });
   }
   port.onDisconnect.addListener(onDisconnect);
   port.onMessage.addListener(onMessage);
   // Initiate the information exchange.
   port.postMessage({
     referer: window.history.state && window.history.state.chromecomState,
-    requestUrl: url
+    requestUrl: url,
   });
 
   function onMessage(referer) {
@@ -327,7 +328,18 @@ class ChromePreferences extends BasePreferences {
         // Get preferences as set by the system administrator.
         // See extensions/chromium/preferences_schema.json for more information.
         // These preferences can be overridden by the user.
-        chrome.storage.managed.get(this.defaults, getPreferences);
+        chrome.storage.managed.get(this.defaults, function(items) {
+          // Migration code for https://github.com/mozilla/pdf.js/pull/7635.
+          // Never remove this, because we have no means of modifying managed
+          // preferences.
+          if (items && items.enableHandToolOnLoad && !items.cursorToolOnLoad) {
+            // if the old enableHandToolOnLoad has a non-default value,
+            // and cursorToolOnLoad has a default value, migrate.
+            items.enableHandToolOnLoad = false;
+            items.cursorToolOnLoad = 1;
+          }
+          getPreferences(items);
+        });
       } else {
         // Managed storage not supported, e.g. in old Chromium versions.
         getPreferences(this.defaults);
@@ -338,8 +350,8 @@ class ChromePreferences extends BasePreferences {
 
 var ChromeExternalServices = Object.create(DefaultExternalServices);
 ChromeExternalServices.initPassiveLoading = function (callbacks) {
-  var appConfig = PDFViewerApplication.appConfig;
-  ChromeCom.resolvePDFFile(appConfig.defaultUrl,
+  let { appConfig, overlayManager, } = PDFViewerApplication;
+  ChromeCom.resolvePDFFile(appConfig.defaultUrl, overlayManager,
       function (url, length, originalURL) {
     callbacks.onOpenWithURL(url, length, originalURL);
   });
@@ -349,6 +361,9 @@ ChromeExternalServices.createDownloadManager = function() {
 };
 ChromeExternalServices.createPreferences = function() {
   return new ChromePreferences();
+};
+ChromeExternalServices.createL10n = function () {
+  return new GenericL10n(navigator.language);
 };
 PDFViewerApplication.externalServices = ChromeExternalServices;
 

@@ -13,36 +13,13 @@
  * limitations under the License.
  */
 
-'use strict';
-
-(function (root, factory) {
-  if (typeof define === 'function' && define.amd) {
-    define('pdfjs/core/cmap', ['exports', 'pdfjs/shared/util',
-      'pdfjs/core/primitives', 'pdfjs/core/stream', 'pdfjs/core/parser'],
-      factory);
-  } else if (typeof exports !== 'undefined') {
-    factory(exports, require('../shared/util.js'), require('./primitives.js'),
-      require('./stream.js'), require('./parser.js'));
-  } else {
-    factory((root.pdfjsCoreCMap = {}), root.pdfjsSharedUtil,
-      root.pdfjsCorePrimitives, root.pdfjsCoreStream, root.pdfjsCoreParser);
-  }
-}(this, function (exports, sharedUtil, corePrimitives, coreStream, coreParser) {
-
-var Util = sharedUtil.Util;
-var assert = sharedUtil.assert;
-var warn = sharedUtil.warn;
-var error = sharedUtil.error;
-var isInt = sharedUtil.isInt;
-var isString = sharedUtil.isString;
-var MissingDataException = sharedUtil.MissingDataException;
-var CMapCompressionType = sharedUtil.CMapCompressionType;
-var isEOF = corePrimitives.isEOF;
-var isName = corePrimitives.isName;
-var isCmd = corePrimitives.isCmd;
-var isStream = corePrimitives.isStream;
-var Stream = coreStream.Stream;
-var Lexer = coreParser.Lexer;
+import {
+  CMapCompressionType, FormatError, isInt, isString, MissingDataException, Util,
+  warn
+} from '../shared/util';
+import { isCmd, isEOF, isName, isStream } from './primitives';
+import { Lexer } from './parser';
+import { Stream } from './stream';
 
 var BUILT_IN_CMAPS = [
 // << Start unicode maps.
@@ -283,24 +260,34 @@ var CMap = (function CMapClosure() {
       // indices in the *billions*. For such tables we use for..in, which isn't
       // ideal because it stringifies the indices for all present elements, but
       // it does avoid iterating over every undefined entry.
-      var map = this._map;
-      var length = map.length;
-      var i;
+      let map = this._map;
+      let length = map.length;
       if (length <= 0x10000) {
-        for (i = 0; i < length; i++) {
+        for (let i = 0; i < length; i++) {
           if (map[i] !== undefined) {
             callback(i, map[i]);
           }
         }
       } else {
-        for (i in this._map) {
+        for (let i in map) {
           callback(i, map[i]);
         }
       }
     },
 
     charCodeOf(value) {
-      return this._map.indexOf(value);
+      // `Array.prototype.indexOf` is *extremely* inefficient for arrays which
+      // are both very sparse and very large (see issue8372.pdf).
+      let map = this._map;
+      if (map.length <= 0x10000) {
+        return map.indexOf(value);
+      }
+      for (let charCode in map) {
+        if (map[charCode] === value) {
+          return (charCode | 0);
+        }
+      }
+      return -1;
     },
 
     getMap() {
@@ -348,7 +335,7 @@ var CMap = (function CMapClosure() {
         }
       }
       return true;
-    }
+    },
   };
   return CMap;
 })();
@@ -367,19 +354,19 @@ var IdentityCMap = (function IdentityCMapClosure() {
     addCodespaceRange: CMap.prototype.addCodespaceRange,
 
     mapCidRange(low, high, dstLow) {
-      error('should not call mapCidRange');
+      throw new Error('should not call mapCidRange');
     },
 
     mapBfRange(low, high, dstLow) {
-      error('should not call mapBfRange');
+      throw new Error('should not call mapBfRange');
     },
 
     mapBfRangeToArray(low, high, array) {
-      error('should not call mapBfRangeToArray');
+      throw new Error('should not call mapBfRangeToArray');
     },
 
     mapOne(src, dst) {
-      error('should not call mapCidOne');
+      throw new Error('should not call mapCidOne');
     },
 
     lookup(code) {
@@ -416,8 +403,8 @@ var IdentityCMap = (function IdentityCMapClosure() {
     },
 
     get isIdentityCMap() {
-      error('should not access .isIdentityCMap');
-    }
+      throw new Error('should not access .isIdentityCMap');
+    },
   };
 
   return IdentityCMap;
@@ -485,7 +472,7 @@ var BinaryCMapReader = (function BinaryCMapReaderClosure() {
       do {
         var b = this.readByte();
         if (b < 0) {
-          error('unexpected EOF in bcmap');
+          throw new FormatError('unexpected EOF in bcmap');
         }
         last = !(b & 0x80);
         n = (n << 7) | (b & 0x7F);
@@ -507,7 +494,7 @@ var BinaryCMapReader = (function BinaryCMapReaderClosure() {
       do {
         var b = this.readByte();
         if (b < 0) {
-          error('unexpected EOF in bcmap');
+          throw new FormatError('unexpected EOF in bcmap');
         }
         last = !(b & 0x80);
         stack[sp++] = b & 0x7F;
@@ -540,7 +527,7 @@ var BinaryCMapReader = (function BinaryCMapReaderClosure() {
         s += String.fromCharCode(this.readNumber());
       }
       return s;
-    }
+    },
   };
 
   function processBinaryCMap(data, cMap, extend) {
@@ -574,7 +561,9 @@ var BinaryCMapReader = (function BinaryCMapReaderClosure() {
         var sequence = !!(b & 0x10);
         var dataSize = b & 15;
 
-        assert(dataSize + 1 <= MAX_NUM_SIZE);
+        if (dataSize + 1 > MAX_NUM_SIZE) {
+          throw new Error('processBinaryCMap: Invalid dataSize.');
+        }
 
         var ucs2DataSize = 1;
         var subitemsCount = stream.readNumber();
@@ -724,13 +713,13 @@ var CMapFactory = (function CMapFactoryClosure() {
 
   function expectString(obj) {
     if (!isString(obj)) {
-      error('Malformed CMap: expected string.');
+      throw new FormatError('Malformed CMap: expected string.');
     }
   }
 
   function expectInt(obj) {
     if (!isInt(obj)) {
-      error('Malformed CMap: expected int.');
+      throw new FormatError('Malformed CMap: expected int.');
     }
   }
 
@@ -783,7 +772,7 @@ var CMapFactory = (function CMapFactoryClosure() {
         break;
       }
     }
-    error('Invalid bf range.');
+    throw new FormatError('Invalid bf range.');
   }
 
   function parseCidChar(cMap, lexer) {
@@ -845,7 +834,7 @@ var CMapFactory = (function CMapFactoryClosure() {
       var high = strToInt(obj);
       cMap.addCodespaceRange(obj.length, low, high);
     }
-    error('Invalid codespace range.');
+    throw new FormatError('Invalid codespace range.');
   }
 
   function parseWMode(cMap, lexer) {
@@ -956,7 +945,10 @@ var CMapFactory = (function CMapFactoryClosure() {
     if (BUILT_IN_CMAPS.indexOf(name) === -1) {
       return Promise.reject(new Error('Unknown CMap name: ' + name));
     }
-    assert(fetchBuiltInCMap, 'Built-in CMap parameters are not provided.');
+    if (!fetchBuiltInCMap) {
+      return Promise.reject(new Error(
+        'Built-in CMap parameters are not provided.'));
+    }
 
     return fetchBuiltInCMap(name).then(function (data) {
       var cMapData = data.cMapData, compressionType = data.compressionType;
@@ -968,11 +960,12 @@ var CMapFactory = (function CMapFactoryClosure() {
           return extendCMap(cMap, fetchBuiltInCMap, useCMap);
         });
       }
-      assert(compressionType === CMapCompressionType.NONE,
-        'TODO: Only BINARY/NONE CMap compression is currently supported.');
-      // Uncompressed CMap.
-      var lexer = new Lexer(new Stream(cMapData));
-      return parseCMap(cMap, lexer, fetchBuiltInCMap, null);
+      if (compressionType === CMapCompressionType.NONE) {
+        var lexer = new Lexer(new Stream(cMapData));
+        return parseCMap(cMap, lexer, fetchBuiltInCMap, null);
+      }
+      return Promise.reject(new Error(
+        'TODO: Only BINARY/NONE CMap compression is currently supported.'));
     });
   }
 
@@ -996,11 +989,12 @@ var CMapFactory = (function CMapFactoryClosure() {
         });
       }
       return Promise.reject(new Error('Encoding required.'));
-    }
+    },
   };
 })();
 
-exports.CMap = CMap;
-exports.CMapFactory = CMapFactory;
-exports.IdentityCMap = IdentityCMap;
-}));
+export {
+  CMap,
+  IdentityCMap,
+  CMapFactory,
+};

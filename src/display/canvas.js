@@ -14,8 +14,8 @@
  */
 
 import {
-  assert, error, FONT_IDENTITY_MATRIX, IDENTITY_MATRIX, ImageKind, info,
-  isArray, isLittleEndian, isNum, OPS, shadow, TextRenderingMode, Util, warn
+  FONT_IDENTITY_MATRIX, IDENTITY_MATRIX, ImageKind, info, isArray,
+  isLittleEndian, isNum, OPS, shadow, TextRenderingMode, Util, warn
 } from '../shared/util';
 import { getShadingPatternFromIR, TilingPattern } from './pattern_helper';
 import { WebGLUtils } from './webgl';
@@ -40,7 +40,7 @@ var FULL_CHUNK_HEIGHT = 16;
 var IsLittleEndianCached = {
   get value() {
     return shadow(IsLittleEndianCached, 'value', isLittleEndian());
-  }
+  },
 };
 
 function addContextCurrentTransform(ctx) {
@@ -60,7 +60,7 @@ function addContextCurrentTransform(ctx) {
     Object.defineProperty(ctx, 'mozCurrentTransform', {
       get: function getCurrentTransform() {
         return this._transformMatrix;
-      }
+      },
     });
 
     Object.defineProperty(ctx, 'mozCurrentTransformInverse', {
@@ -83,7 +83,7 @@ function addContextCurrentTransform(ctx) {
           (d * e - c * f) / bc_ad,
           (b * e - a * f) / ad_bc
         ];
-      }
+      },
     });
 
     ctx.save = function ctxSave() {
@@ -188,7 +188,7 @@ var CachedCanvases = (function CachedCanvasesClosure() {
         this.canvasFactory.destroy(canvasEntry);
         delete this.cache[id];
       }
-    }
+    },
   };
   return CachedCanvases;
 })();
@@ -354,7 +354,7 @@ function compileType3Glyph(imgData) {
 }
 
 var CanvasExtraState = (function CanvasExtraStateClosure() {
-  function CanvasExtraState(old) {
+  function CanvasExtraState() {
     // Are soft masks and alpha values shapes or opacities?
     this.alphaIsShape = false;
     this.fontSize = 0;
@@ -385,8 +385,6 @@ var CanvasExtraState = (function CanvasExtraStateClosure() {
     this.lineWidth = 1;
     this.activeSMask = null;
     this.resumeSMaskCtx = null; // nonclonable field (see the save method below)
-
-    this.old = old;
   }
 
   CanvasExtraState.prototype = {
@@ -396,7 +394,7 @@ var CanvasExtraState = (function CanvasExtraStateClosure() {
     setCurrentPoint: function CanvasExtraState_setCurrentPoint(x, y) {
       this.x = x;
       this.y = y;
-    }
+    },
   };
   return CanvasExtraState;
 })();
@@ -555,7 +553,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
         ctx.putImageData(chunkImgData, 0, i * FULL_CHUNK_HEIGHT);
       }
     } else {
-      error('bad image kind: ' + imgData.kind);
+      throw new Error(`bad image kind: ${imgData.kind}`);
     }
   }
 
@@ -606,6 +604,23 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
     if (sourceCtx.setLineDash !== undefined) {
       destCtx.setLineDash(sourceCtx.getLineDash());
       destCtx.lineDashOffset = sourceCtx.lineDashOffset;
+    }
+  }
+
+  function resetCtxToDefault(ctx) {
+    ctx.strokeStyle = '#000000';
+    ctx.fillStyle = '#000000';
+    ctx.fillRule = 'nonzero';
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1;
+    ctx.lineCap = 'butt';
+    ctx.lineJoin = 'miter';
+    ctx.miterLimit = 10;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.font = '10px sans-serif';
+    if (ctx.setLineDash !== undefined) {
+      ctx.setLineDash([]);
+      ctx.lineDashOffset = 0;
     }
   }
 
@@ -734,6 +749,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       }
 
       this.ctx.save();
+      resetCtxToDefault(this.ctx);
       if (transform) {
         this.ctx.transform.apply(this.ctx, transform);
       }
@@ -1261,7 +1277,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       var current = this.current;
 
       if (!fontObj) {
-        error('Can\'t find font for ' + fontRefName);
+        throw new Error(`Can't find font for ${fontRefName}`);
       }
 
       current.fontMatrix = (fontObj.fontMatrix ?
@@ -1633,7 +1649,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
           createCanvasGraphics: (ctx) => {
             return new CanvasGraphics(ctx, this.commonObjs, this.objs,
                                       this.canvasFactory);
-          }
+          },
         };
         pattern = new TilingPattern(IR, color, this.ctx, canvasGraphicsFactory,
                                     baseTransform);
@@ -1700,10 +1716,10 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
 
     // Images
     beginInlineImage: function CanvasGraphics_beginInlineImage() {
-      error('Should not call beginInlineImage');
+      throw new Error('Should not call beginInlineImage');
     },
     beginImageData: function CanvasGraphics_beginImageData() {
-      error('Should not call beginImageData');
+      throw new Error('Should not call beginImageData');
     },
 
     paintFormXObjectBegin: function CanvasGraphics_paintFormXObjectBegin(matrix,
@@ -1761,7 +1777,9 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       if (group.matrix) {
         currentCtx.transform.apply(currentCtx, group.matrix);
       }
-      assert(group.bbox, 'Bounding box is required.');
+      if (!group.bbox) {
+        throw new Error('Bounding box is required.');
+      }
 
       // Based on the current transform figure out how big the bounding box
       // will actually be.
@@ -1863,8 +1881,6 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
 
     beginAnnotations: function CanvasGraphics_beginAnnotations() {
       this.save();
-      this.current = new CanvasExtraState();
-
       if (this.baseTransform) {
         this.ctx.setTransform.apply(this.ctx, this.baseTransform);
       }
@@ -1877,6 +1893,8 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
     beginAnnotation: function CanvasGraphics_beginAnnotation(rect, transform,
                                                              matrix) {
       this.save();
+      resetCtxToDefault(this.ctx);
+      this.current = new CanvasExtraState();
 
       if (isArray(rect) && rect.length === 4) {
         var width = rect[2] - rect[0];
@@ -1917,7 +1935,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
           left: position[0],
           top: position[1],
           width: w / currentTransform[0],
-          height: h / currentTransform[3]
+          height: h / currentTransform[3],
         });
       }
       this.restore();
@@ -2054,8 +2072,8 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       var height = imgData.height;
       var map = [];
       for (var i = 0, ii = positions.length; i < ii; i += 2) {
-        map.push({transform: [scaleX, 0, 0, scaleY, positions[i],
-                 positions[i + 1]], x: 0, y: 0, w: width, h: height});
+        map.push({ transform: [scaleX, 0, 0, scaleY, positions[i],
+                   positions[i + 1]], x: 0, y: 0, w: width, h: height, });
       }
       this.paintInlineImageXObjectGroup(imgData, map);
     },
@@ -2125,7 +2143,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
           left: position[0],
           top: position[1],
           width: width / currentTransform[0],
-          height: height / currentTransform[3]
+          height: height / currentTransform[3],
         });
       }
       this.restore();
@@ -2155,7 +2173,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
             left: position[0],
             top: position[1],
             width: w,
-            height: h
+            height: h,
           });
         }
         ctx.restore();
@@ -2235,7 +2253,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
         transform[0] * x + transform[2] * y + transform[4],
         transform[1] * x + transform[3] * y + transform[5]
       ];
-    }
+    },
   };
 
   for (var op in OPS) {
